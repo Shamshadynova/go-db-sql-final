@@ -3,72 +3,93 @@ package main
 import (
 	"database/sql"
 	"fmt"
-
-	_ "modernc.org/sqlite" // Импорт драйвера SQLite
 )
 
-func main() {
-	db, err := sql.Open("sqlite", "file:db_name.db")
-	if err != nil {
-		fmt.Println("Error opening database:", err)
-		return
-	}
-	defer db.Close()
+type ParcelStore struct {
+	db *sql.DB
+}
 
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS parcel (
-		number INTEGER PRIMARY KEY AUTOINCREMENT,
-		client INTEGER,
-		address TEXT,
-		status TEXT,
-		created_at TEXT
-	)`)
+func NewParcelStore(db *sql.DB) ParcelStore {
+	return ParcelStore{db: db}
+}
+
+func (s ParcelStore) Add(p Parcel) (int, error) {
+	result, err := s.db.Exec("INSERT INTO parcel (client, address, status, created_at) VALUES (?, ?, ?, ?)", p.Client, p.Address, p.Status, p.CreatedAt)
 	if err != nil {
-		fmt.Println("Error creating table:", err)
-		return
+		return 0, err
 	}
 
-	store := NewParcelStore(db)
-
-	newParcel := Parcel{Client: 1, Address: "123 Main St", Status: ParcelStatusRegistered, CreatedAt: "2023-07-28T12:34:56Z"}
-	id, err := store.Add(newParcel)
+	id, err := result.LastInsertId()
 	if err != nil {
-		fmt.Println("Error adding parcel:", err)
-		return
+		return 0, err
 	}
-	fmt.Println("Added parcel with ID:", id)
 
-	parcel, err := store.Get(id)
-	if err != nil {
-		fmt.Println("Error getting parcel:", err)
-		return
-	}
-	fmt.Println("Got parcel:", parcel)
+	return int(id), nil
+}
 
-	parcels, err := store.GetByClient(1)
-	if err != nil {
-		fmt.Println("Error getting parcels by client:", err)
-		return
-	}
-	fmt.Println("Got parcels by client:", parcels)
+func (s ParcelStore) Get(number int) (Parcel, error) {
+	row := s.db.QueryRow("SELECT number, client, address, status, created_at FROM parcel WHERE number = ?", number)
 
-	err = store.SetStatus(id, ParcelStatusSent)
+	var p Parcel
+	err := row.Scan(&p.Number, &p.Client, &p.Address, &p.Status, &p.CreatedAt)
 	if err != nil {
-		fmt.Println("Error setting status:", err)
-		return
+		return Parcel{}, err
 	}
-	fmt.Println("Set status to 'sent' for parcel with ID:", id)
 
-	err = store.SetAddress(id, "456 Elm St")
-	if err != nil {
-		fmt.Println("Error setting address:", err)
-		return
-	}
-	fmt.Println("Set address for parcel with ID:", id)
+	return p, nil
+}
 
-	err = store.Delete(id)
+func (s ParcelStore) GetByClient(client int) ([]Parcel, error) {
+	rows, err := s.db.Query("SELECT number, client, address, status, created_at FROM parcel WHERE client = ?", client)
 	if err != nil {
-		fmt.Println("Error deleting parcel:", err)
-		return
+		return nil, err
 	}
-	fmt.Println("Deleted parcel with ID:", id)
+	defer rows.Close()
+
+	var parcels []Parcel
+	for rows.Next() {
+		var p Parcel
+		err := rows.Scan(&p.Number, &p.Client, &p.Address, &p.Status, &p.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		parcels = append(parcels, p)
+	}
+
+	return parcels, nil
+}
+
+func (s ParcelStore) SetStatus(number int, status string) error {
+	_, err := s.db.Exec("UPDATE parcel SET status = ? WHERE number = ?", status, number)
+	return err
+}
+
+func (s ParcelStore) SetAddress(number int, address string) error {
+	var status string
+	err := s.db.QueryRow("SELECT status FROM parcel WHERE number = ?", number).Scan(&status)
+	if err != nil {
+		return err
+	}
+
+	if status != ParcelStatusRegistered {
+		return fmt.Errorf("address can only be changed if the status is 'registered'")
+	}
+
+	_, err = s.db.Exec("UPDATE parcel SET address = ? WHERE number = ?", address, number)
+	return err
+}
+
+func (s ParcelStore) Delete(number int) error {
+	var status string
+	err := s.db.QueryRow("SELECT status FROM parcel WHERE number = ?", number).Scan(&status)
+	if err != nil {
+		return err
+	}
+
+	if status != ParcelStatusRegistered {
+		return fmt.Errorf("parcel can only be deleted if the status is 'registered'")
+	}
+
+	_, err = s.db.Exec("DELETE FROM parcel WHERE number = ?", number)
+	return err
 }

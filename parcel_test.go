@@ -2,103 +2,149 @@ package main
 
 import (
 	"database/sql"
+	"math/rand"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
 
-func getTestParcelStore(t *testing.T) ParcelStore {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+var (
+	randSource = rand.NewSource(time.Now().UnixNano())
+	randRange  = rand.New(randSource)
+)
 
-	_, err = db.Exec(`CREATE TABLE parcel (
+func getTestParcel() Parcel {
+	return Parcel{
+		Client:    1000,
+		Status:    ParcelStatusRegistered,
+		Address:   "test",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func setupTestDB(t *testing.T) *sql.DB {
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS parcel (
 		number INTEGER PRIMARY KEY AUTOINCREMENT,
 		client INTEGER,
 		address TEXT,
 		status TEXT,
 		created_at TEXT
 	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	return NewParcelStore(db)
+	return db
 }
 
-func clearTable(db *sql.DB) {
-	db.Exec("DELETE FROM parcel")
+func TestAddGetDelete(t *testing.T) {
+	db := setupTestDB(t)
+	store := NewParcelStore(db)
+	parcel := getTestParcel()
+
+	// add
+	id, err := store.Add(parcel)
+	require.NoError(t, err)
+	require.NotZero(t, id)
+
+	// get
+	storedParcel, err := store.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, parcel.Client, storedParcel.Client)
+	require.Equal(t, parcel.Status, storedParcel.Status)
+	require.Equal(t, parcel.Address, storedParcel.Address)
+	require.Equal(t, parcel.CreatedAt, storedParcel.CreatedAt)
+
+	// delete
+	err = store.Delete(id)
+	require.NoError(t, err)
+
+	_, err = store.Get(id)
+	require.Error(t, err)
 }
 
-func TestAddAndGetParcel(t *testing.T) {
-	store := getTestParcelStore(t)
-	clearTable(store.db)
+func TestSetAddress(t *testing.T) {
+	db := setupTestDB(t)
+	store := NewParcelStore(db)
+	parcel := getTestParcel()
 
-	newParcel := Parcel{Client: 1, Address: "123 Main St", Status: ParcelStatusRegistered, CreatedAt: "2023-07-28T12:34:56Z"}
-	id, err := store.Add(newParcel)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	// add
+	id, err := store.Add(parcel)
+	require.NoError(t, err)
+	require.NotZero(t, id)
 
-	parcel, err := store.Get(id)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	// set address
+	newAddress := "new test address"
+	err = store.SetAddress(id, newAddress)
+	require.NoError(t, err)
 
-	if parcel.Client != newParcel.Client || parcel.Address != newParcel.Address || parcel.Status != newParcel.Status || parcel.CreatedAt != newParcel.CreatedAt {
-		t.Fatalf("expected %v, got %v", newParcel, parcel)
-	}
-}
-
-func TestGetByClient(t *testing.T) {
-	store := getTestParcelStore(t)
-	clearTable(store.db)
-
-	parcels := []Parcel{
-		{Client: 1, Address: "Address 1", Status: ParcelStatusRegistered, CreatedAt: "2023-07-28T12:34:56Z"},
-		{Client: 1, Address: "Address 2", Status: ParcelStatusSent, CreatedAt: "2023-07-28T12:35:56Z"},
-		{Client: 2, Address: "Address 3", Status: ParcelStatusDelivered, CreatedAt: "2023-07-28T12:36:56Z"},
-	}
-
-	for _, p := range parcels {
-		_, err := store.Add(p)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-	}
-
-	result, err := store.GetByClient(1)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if len(result) != 2 {
-		t.Fatalf("expected 2 parcels, got %v", len(result))
-	}
+	// check
+	storedParcel, err := store.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, newAddress, storedParcel.Address)
 }
 
 func TestSetStatus(t *testing.T) {
-	store := getTestParcelStore(t)
-	clearTable(store.db)
+	db := setupTestDB(t)
+	store := NewParcelStore(db)
+	parcel := getTestParcel()
 
-	newParcel := Parcel{Client: 1, Address: "123 Main St", Status: ParcelStatusRegistered, CreatedAt: "2023-07-28T12:34:56Z"}
-	id, err := store.Add(newParcel)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	// add
+	id, err := store.Add(parcel)
+	require.NoError(t, err)
+	require.NotZero(t, id)
+
+	// set status
+	newStatus := ParcelStatusSent
+	err = store.SetStatus(id, newStatus)
+	require.NoError(t, err)
+
+	// check
+	storedParcel, err := store.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, newStatus, storedParcel.Status)
+}
+
+func TestGetByClient(t *testing.T) {
+	db := setupTestDB(t)
+	store := NewParcelStore(db)
+
+	parcels := []Parcel{
+		getTestParcel(),
+		getTestParcel(),
+		getTestParcel(),
+	}
+	parcelMap := map[int]Parcel{}
+
+	client := randRange.Intn(10_000_000)
+	for i := range parcels {
+		parcels[i].Client = client
 	}
 
-	err = store.SetStatus(id, ParcelStatusSent)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	// add
+	for i := range parcels {
+		id, err := store.Add(parcels[i])
+		require.NoError(t, err)
+		require.NotZero(t, id)
+		parcels[i].Number = id
+		parcelMap[id] = parcels[i]
 	}
 
-	parcel, err := store.Get(id)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	// get by client
+	storedParcels, err := store.GetByClient(client)
+	require.NoError(t, err)
+	require.Equal(t, len(parcels), len(storedParcels))
 
-	if parcel.Status != ParcelStatusSent {
-		t.Fatalf("expected status %v, got %v", ParcelStatusSent, parcel.Status)
+	// check
+	for _, storedParcel := range storedParcels {
+		expectedParcel, exists := parcelMap[storedParcel.Number]
+		require.True(t, exists)
+		require.Equal(t, expectedParcel.Client, storedParcel.Client)
+		require.Equal(t, expectedParcel.Status, storedParcel.Status)
+		require.Equal(t, expectedParcel.Address, storedParcel.Address)
+		require.Equal(t, expectedParcel.CreatedAt, storedParcel.CreatedAt)
 	}
 }

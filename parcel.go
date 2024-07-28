@@ -2,59 +2,73 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
+
+	_ "modernc.org/sqlite" // Импорт драйвера SQLite
 )
 
-type ParcelStore struct {
-	db *sql.DB
-}
+func main() {
+	db, err := sql.Open("sqlite", "file:db_name.db")
+	if err != nil {
+		fmt.Println("Error opening database:", err)
+		return
+	}
+	defer db.Close()
 
-func NewParcelStore(db *sql.DB) ParcelStore {
-	return ParcelStore{db: db}
-}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS parcel (
+		number INTEGER PRIMARY KEY AUTOINCREMENT,
+		client INTEGER,
+		address TEXT,
+		status TEXT,
+		created_at TEXT
+	)`)
+	if err != nil {
+		fmt.Println("Error creating table:", err)
+		return
+	}
 
-func (s ParcelStore) Add(p Parcel) (int, error) {
-	// реализуйте добавление строки в таблицу parcel, используйте данные из переменной p
+	store := NewParcelStore(db)
 
-	// верните идентификатор последней добавленной записи
-	return 0, nil
-}
+	newParcel := Parcel{Client: 1, Address: "123 Main St", Status: ParcelStatusRegistered, CreatedAt: "2023-07-28T12:34:56Z"}
+	id, err := store.Add(newParcel)
+	if err != nil {
+		fmt.Println("Error adding parcel:", err)
+		return
+	}
+	fmt.Println("Added parcel with ID:", id)
 
-func (s ParcelStore) Get(number int) (Parcel, error) {
-	// реализуйте чтение строки по заданному number
-	// здесь из таблицы должна вернуться только одна строка
+	parcel, err := store.Get(id)
+	if err != nil {
+		fmt.Println("Error getting parcel:", err)
+		return
+	}
+	fmt.Println("Got parcel:", parcel)
 
-	// заполните объект Parcel данными из таблицы
-	p := Parcel{}
+	parcels, err := store.GetByClient(1)
+	if err != nil {
+		fmt.Println("Error getting parcels by client:", err)
+		return
+	}
+	fmt.Println("Got parcels by client:", parcels)
 
-	return p, nil
-}
+	err = store.SetStatus(id, ParcelStatusSent)
+	if err != nil {
+		fmt.Println("Error setting status:", err)
+		return
+	}
+	fmt.Println("Set status to 'sent' for parcel with ID:", id)
 
-func (s ParcelStore) GetByClient(client int) ([]Parcel, error) {
-	// реализуйте чтение строк из таблицы parcel по заданному client
-	// здесь из таблицы может вернуться несколько строк
+	err = store.SetAddress(id, "456 Elm St")
+	if err != nil {
+		fmt.Println("Error setting address:", err)
+		return
+	}
+	fmt.Println("Set address for parcel with ID:", id)
 
-	// заполните срез Parcel данными из таблицы
-	var res []Parcel
-
-	return res, nil
-}
-
-func (s ParcelStore) SetStatus(number int, status string) error {
-	// реализуйте обновление статуса в таблице parcel
-
-	return nil
-}
-
-func (s ParcelStore) SetAddress(number int, address string) error {
-	// реализуйте обновление адреса в таблице parcel
-	// менять адрес можно только если значение статуса registered
-
-	return nil
-}
-
-func (s ParcelStore) Delete(number int) error {
-	// реализуйте удаление строки из таблицы parcel
-	// удалять строку можно только если значение статуса registered
-
-	return nil
+	err = store.Delete(id)
+	if err != nil {
+		fmt.Println("Error deleting parcel:", err)
+		return
+	}
+	fmt.Println("Deleted parcel with ID:", id)
 }

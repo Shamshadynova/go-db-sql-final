@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 	_ "modernc.org/sqlite"
 )
 
@@ -26,7 +26,7 @@ func getTestParcel() Parcel {
 
 func setupTestDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("sqlite", ":memory:")
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS parcel (
 		number INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +35,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		status TEXT,
 		created_at TEXT
 	)`)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	return db
 }
@@ -47,23 +47,23 @@ func TestAddGetDelete(t *testing.T) {
 
 	// add
 	id, err := store.Add(parcel)
-	require.NoError(t, err)
-	require.NotZero(t, id)
+	assert.NoError(t, err)
+	assert.Greater(t, id, 0, "ID should be greater than zero")
 
 	// get
 	storedParcel, err := store.Get(id)
-	require.NoError(t, err)
-	require.Equal(t, parcel.Client, storedParcel.Client)
-	require.Equal(t, parcel.Status, storedParcel.Status)
-	require.Equal(t, parcel.Address, storedParcel.Address)
-	require.Equal(t, parcel.CreatedAt, storedParcel.CreatedAt)
+	assert.NoError(t, err)
+	assert.Equal(t, parcel.Client, storedParcel.Client)
+	assert.Equal(t, parcel.Status, storedParcel.Status)
+	assert.Equal(t, parcel.Address, storedParcel.Address)
+	assert.Equal(t, parcel.CreatedAt, storedParcel.CreatedAt)
 
 	// delete
 	err = store.Delete(id)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	_, err = store.Get(id)
-	require.Error(t, err)
+	assert.Error(t, err)
 }
 
 func TestSetAddress(t *testing.T) {
@@ -73,18 +73,18 @@ func TestSetAddress(t *testing.T) {
 
 	// add
 	id, err := store.Add(parcel)
-	require.NoError(t, err)
-	require.NotZero(t, id)
+	assert.NoError(t, err)
+	assert.Greater(t, id, 0, "ID should be greater than zero")
 
 	// set address
 	newAddress := "new test address"
 	err = store.SetAddress(id, newAddress)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	// check
 	storedParcel, err := store.Get(id)
-	require.NoError(t, err)
-	require.Equal(t, newAddress, storedParcel.Address)
+	assert.NoError(t, err)
+	assert.Equal(t, newAddress, storedParcel.Address)
 }
 
 func TestSetStatus(t *testing.T) {
@@ -94,18 +94,18 @@ func TestSetStatus(t *testing.T) {
 
 	// add
 	id, err := store.Add(parcel)
-	require.NoError(t, err)
-	require.NotZero(t, id)
+	assert.NoError(t, err)
+	assert.Greater(t, id, 0, "ID should be greater than zero")
 
 	// set status
 	newStatus := ParcelStatusSent
 	err = store.SetStatus(id, newStatus)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	// check
 	storedParcel, err := store.Get(id)
-	require.NoError(t, err)
-	require.Equal(t, newStatus, storedParcel.Status)
+	assert.NoError(t, err)
+	assert.Equal(t, newStatus, storedParcel.Status)
 }
 
 func TestGetByClient(t *testing.T) {
@@ -117,7 +117,6 @@ func TestGetByClient(t *testing.T) {
 		getTestParcel(),
 		getTestParcel(),
 	}
-	parcelMap := map[int]Parcel{}
 
 	client := randRange.Intn(10_000_000)
 	for i := range parcels {
@@ -127,24 +126,15 @@ func TestGetByClient(t *testing.T) {
 	// add
 	for i := range parcels {
 		id, err := store.Add(parcels[i])
-		require.NoError(t, err)
-		require.NotZero(t, id)
+		assert.NoError(t, err)
+		assert.Greater(t, id, 0, "ID should be greater than zero")
 		parcels[i].Number = id
-		parcelMap[id] = parcels[i]
 	}
 
 	// get by client
 	storedParcels, err := store.GetByClient(client)
-	require.NoError(t, err)
-	require.Equal(t, len(parcels), len(storedParcels))
+	assert.NoError(t, err)
 
 	// check
-	for _, storedParcel := range storedParcels {
-		expectedParcel, exists := parcelMap[storedParcel.Number]
-		require.True(t, exists)
-		require.Equal(t, expectedParcel.Client, storedParcel.Client)
-		require.Equal(t, expectedParcel.Status, storedParcel.Status)
-		require.Equal(t, expectedParcel.Address, storedParcel.Address)
-		require.Equal(t, expectedParcel.CreatedAt, storedParcel.CreatedAt)
-	}
+	assert.ElementsMatch(t, parcels, storedParcels)
 }

@@ -56,6 +56,10 @@ func (s ParcelStore) GetByClient(client int) ([]Parcel, error) {
 		parcels = append(parcels, p)
 	}
 
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return parcels, nil
 }
 
@@ -65,31 +69,37 @@ func (s ParcelStore) SetStatus(number int, status string) error {
 }
 
 func (s ParcelStore) SetAddress(number int, address string) error {
-	var status string
-	err := s.db.QueryRow("SELECT status FROM parcel WHERE number = ?", number).Scan(&status)
+	result, err := s.db.Exec("UPDATE parcel SET address = ? WHERE number = ? AND status = ?", address, number, ParcelStatusRegistered)
 	if err != nil {
 		return err
 	}
 
-	if status != ParcelStatusRegistered {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
 		return fmt.Errorf("address can only be changed if the status is 'registered'")
 	}
 
-	_, err = s.db.Exec("UPDATE parcel SET address = ? WHERE number = ?", address, number)
-	return err
+	return nil
 }
 
 func (s ParcelStore) Delete(number int) error {
-	var status string
-	err := s.db.QueryRow("SELECT status FROM parcel WHERE number = ?", number).Scan(&status)
+	result, err := s.db.Exec("DELETE FROM parcel WHERE number = ? AND status = ?", number, ParcelStatusRegistered)
 	if err != nil {
 		return err
 	}
 
-	if status != ParcelStatusRegistered {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
 		return fmt.Errorf("parcel can only be deleted if the status is 'registered'")
 	}
 
-	_, err = s.db.Exec("DELETE FROM parcel WHERE number = ?", number)
-	return err
+	return nil
 }
